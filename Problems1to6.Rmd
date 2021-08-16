@@ -2,6 +2,8 @@
 title: "Intro to Machine Learning (STA380) - Part 2"
 author: "Christian Alfonso, Musmin Zar, Satya Pal, Vinay Pahwa"
 date: "16/08/2021"
+Link to Github repository: https://github.com/satyapal07/ML2_STA380_exercises
+
 output: pdf_document
 
 
@@ -21,15 +23,12 @@ library(doParallel)
 library(foreach)
 library(randomForest)
 library(plyr)
-
+library(arules) ## install.packages('arules')
 
 ```
 
 
-
 # Question 1: Visual Story Telling (Part 1): Green Building
-
-
 
 
 ```{r, include=FALSE}
@@ -117,6 +116,72 @@ All and all, the Guru was wrong for making quick assumptions of the data without
 
 
 # Question 2: Visual Story Telling (Part 2): flights at ABIA
+
+
+```{r, include=FALSE}
+df1 <- read.csv("ABIA.csv")
+```
+To start, I wanted to see how Airtime and Distance were related. I assumed the more Airtime, the longer the Distance.
+
+```{r, echo=FALSE}
+#Airtime vs Distance
+ggplot(data=df1, aes(x=AirTime, y=Distance)) +
+  geom_point(alpha = 0.4)+
+  labs(x="Air Time", y='Distace', title = 'Airtime vs Distance',
+       ) +
+  geom_smooth(fill = NA, method=lm) +
+  xlim(0, 200) +
+  theme_classic()
+```
+And here we can see that is true. So far, no fancy changes or crazy assumptions.
+
+Next I wanted to plot the number of flights per day on each day of the month.
+
+```{r, echo=FALSE}
+#Bar of Days of the Month
+ggplot(df1) +
+  geom_bar(aes(x=DayofMonth), position = "dodge") +
+  labs(x="Days of the Month", y='Count', title = '# of Flights each day of the month',
+       ) +
+  theme_classic()
+```
+I had to use a bar chart, as my other charts were not playing nice. Here it looks like we have a lower rate of flights on the 31st. If you didn't think about it much, you might assume this means not many people fly at the end of the month, but really, its more of a factor when you think of how many months of a 31st day in them compared to others. Only 7 out of the 12 months of the year have a 31st day and here we can see that data align well as its a little over half of the rest of the days.
+
+```{r, echo=FALSE}
+#Bar of Months
+ggplot(df1) +
+  geom_bar(aes(x=Month), position = "dodge") +
+  labs(x="Month", y='Count', title = '# of Flights per Month',
+  ) +
+  theme_classic()
+```
+So we did days of the month, here is flights per month. We can see general trends, like increased traffic during holiday times as well as summer time. 
+
+Now we have my favorite change.
+I wanted to plot cancelled flights against distance.
+I assumed the longer the flight, the more likely it was to get cancelled. The longer a plane is in the air, the high its chance of other variables coming in and causing problems, like weather or traffic delays.
+
+```{r, echo=FALSE}
+#Cancelled vs Distance
+ggplot(data=df1, aes(x=Cancelled, y=Distance)) +
+  geom_point(alpha = 0.4)+
+  labs(x="Cancelled", y='Distace', title = 'Cancelled vs Distance',
+  ) +
+  geom_smooth(fill = NA, method=lm) +
+  xlim(0, 1) +
+  theme_classic()
+```
+Here we see the opposite. Shorter flights actually have higher chances of being cancelled.
+
+```{r, echo=FALSE}
+#Box for Cancelled vs Distance
+ggplot(data = df1, aes(x=Cancelled, y =Distance)) +
+  geom_boxplot(aes(group=Cancelled)) +
+  labs(x="Cancelled", y='Distance', title = 'Cancelled vs Distance') +
+  theme_classic()
+```
+
+It becomes more apparent in the boxplot. This is different then I was expecting, meaning there are many more variables at play when it comes to short distance flights while long distance flights don't seem to be effected as much.
 
 # Question 3: Portfolio Modeling
 
@@ -473,7 +538,9 @@ Finally, we pull the naive bayes analysis and get a 26% accuracy. This is not id
 ```{r, include=FALSE}
 df5 <- read.transactions("groceries.txt", sep = ",")
 ```
+
 To start, we can take a small look into the dataset.
+
 ```{r, echo=FALSE}
 summary(df5)
 ```
