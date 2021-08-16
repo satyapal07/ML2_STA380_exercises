@@ -1,0 +1,502 @@
+---
+title: "Intro to Machine Learning (STA380) - Part 2"
+author: "Christian Alfonso, Musmin Zar, Satya Pal, Vinay Pahwa"
+date: "16/08/2021"
+output: pdf_document
+
+
+---
+
+```{r}
+
+library(mosaic)
+library(quantmod)
+library(foreach)
+library(tm) 
+library(magrittr)
+library(e1071)
+library(caret)
+library(dplyr)
+library(doParallel)
+library(foreach)
+library(randomForest)
+library(plyr)
+
+
+```
+
+
+
+# Question 1: Visual Story Telling (Part 1): Green Building
+
+
+
+
+```{r, include=FALSE}
+df <- read.csv("greenbuildings.csv")
+```
+
+I do not agree with the stats guru. For starters, only 216 houses have an occupancy of less than 10%. This is a small amount of buildings, and there is no way to know what is happening in this buildins, so we shouldn't just write them off.
+
+To begin, we have the plot of the data the Guru uses.
+```{r, echo=FALSE}
+#General Relationship between Green Rating and Rent used by Excel Guru (boxplots)
+ggplot(data = df, aes(x=green_rating, y = Rent)) +
+  geom_boxplot(aes(group=green_rating)) +
+  labs(x="Green Rating", y='Rent ($ per square foot)', title = 'Green Rating versus Rent') +
+  theme_classic()
+```
+He is saying the rent is higher because the buildings are green. He seems right if you use only this data, but lets look at some more.
+
+```{r, echo=FALSE}
+#Relationship between Age and Rent
+ggplot(data=df, aes(x=age, y=Rent, colour=green_rating)) +
+  geom_point(alpha = 0.4)+
+  labs(x="Age of Building", y='Rent ($ per square foot)', title = 'Age versus Rent',
+       color='Green building') +
+  geom_smooth(fill = NA, method=lm) +
+  xlim(0, 200) +
+  theme_classic()
+```
+Here, I am looking at the relationship between Age and Rent. It is a bit hard to see so we will separate it.
+
+```{r, echo=FALSE}
+#Relationship between Age and Rent (Separated)  
+ggplot(data=df, aes(x=age, y=Rent, colour=green_rating)) +
+  geom_point(alpha = 0.4)+
+  labs(x="Age of Building", y='Rent ($ per square foot)', title = 'Age versus Rent',
+       color='Green building') +
+  geom_smooth(fill = NA, method=lm) +
+  facet_wrap(df$green_rating ~ ., scales = "free") +
+  xlim(0, 200) +
+  theme_classic()
+```
+Now we can see how rent goes down as age goes up for non-green buildings, but the inverse is true for green buildings. We can already start to see a little of how the Guru is wrong. 
+
+```{r, echo=FALSE}
+#Relationship between Age and Green Energy Status
+ggplot(df, aes(x=age)) +
+  geom_density(aes(fill=factor(green_rating)), alpha=0.4)+
+  labs(x="Age", y='Density', title = 'Distribution of Age',
+       fill='Green building') +
+  scale_x_continuous(labels = scales::comma) +
+  theme_classic()
+```
+Here we can see a majority of the green buildings are newer. This shows us the Guru can also be wrong because he assumes the rent is higher because the buildings are green, when it could also be because the buildings are newer. Age is a confounding variable, and should have been taken into consideration. 
+
+The assumption made by the guru is wrong, the building would pay for itself faster as time when on and rent increased gradually.
+
+```{r, echo=FALSE}
+#Relationship between Amenities and Rent
+ggplot(data=df, aes(x=amenities, y=Rent, colour=green_rating)) +
+  geom_point(alpha = 0.4)+
+  labs(x="Amenities", y='Rent ($ per square foot)', title = 'Amenities versus Rent',
+       color='Green building') +
+  geom_smooth(fill = NA, method=lm) +
+  xlim(0, 1) +
+  theme_classic()  
+```
+To see if I could grab another confounding variable, I attempted using amenities. The plot doesn't go so well, but I am saying the cost of rent is higher where there are more amenities. Next I have a bar chart to show green rating.
+
+```{r, echo=FALSE}
+#Green Rating and Amenities
+ggplot(df) +
+  geom_bar(aes(x=green_rating, fill=factor(amenities)), position = "dodge") +
+  labs(x="Green Rating", y='Count', title = 'Distribution of Green Rating',
+       fill='Amenities') +
+  theme_classic()
+```
+Here, we can see the green buildings have more amenities, and rent is higher in both green buildings, and buildings with more amenities, making amenities another confounding variable.
+
+
+All and all, the Guru was wrong for making quick assumptions of the data without trying to find if his correlation was true regarding other variables and if other variables play a factor.
+
+
+
+
+
+
+# Question 2: Visual Story Telling (Part 2): flights at ABIA
+
+# Question 3: Portfolio Modeling
+
+We have decided to choose three different portfolios with the following breakdowns:
+
+### Portfolio 1 (Low Risk Portfolio):
+
+```{r q3p1, echo=FALSE, message=FALSE}
+rm(list=ls())
+```
+
+
+This portfolio is made up of index ETF's and bond ETF's. It is meant to represent a low risk investment strategy.
+
+* SDY - SPDR S&P Dividend ETF (80%)
+* IGOV - iShares International Treasury Bond ETF (10%)
+* SHY - iShares 1-3 Year Treasury Bond ETF (10%)
+
+Below is a pairings plot of the selected ETFs:
+
+&nbsp;  
+
+```{r q3p2, echo=FALSE, warning=FALSE, message=FALSE}
+mystocks = c("SDY", "IGOV", "SHY")
+myprices = getSymbols(mystocks, from = "2015-08-01")
+
+for(ticker in mystocks) {
+  expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
+  eval(parse(text=expr))
+}
+
+all_returns = cbind(	ClCl(SDYa),
+                     ClCl(IGOVa),
+                     ClCl(SHYa))
+
+all_returns = as.matrix(na.omit(all_returns))
+
+pairs(all_returns)
+```
+
+We are running 5000, 20 trading day models. One of the models looks follows the graph seen below:
+
+```{r q3p3, echo=FALSE}
+initial_wealth = 10000
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  total_wealth = initial_wealth
+  weights = c(0.8, 0.1, 0.1)
+  holdings = weights * total_wealth
+  n_days = 20
+  wealthtracker = rep(0, n_days)
+  for(today in 1:n_days) {
+    return.today = resample(all_returns, 1, orig.ids=FALSE)
+    holdings = holdings + holdings*return.today
+    total_wealth = sum(holdings)
+    wealthtracker[today] = total_wealth
+  }
+  wealthtracker
+}
+
+plot(wealthtracker, type='l', xlab='Days', ylab='Dollars')
+```
+
+A summary of these 5000 models can be seen here:
+
+```{r q3p16, echo=FALSE}
+# Profit/loss
+hist(sim1[,n_days]- initial_wealth, breaks=30, main ='Profit/Loss', xlab='')
+```
+
+The mean profit/loss was:
+
+```{r q3p4, echo=FALSE}
+mean(sim1[,n_days] - initial_wealth)
+```
+
+The 5% VaR was:
+
+```{r q3p5,echo=FALSE}
+quantile(sim1[,n_days]- initial_wealth, prob=0.05)
+```
+
+### Portfolio 2 (High Risk):
+
+This portfolio is made up of small cap and mid cap index ETFs. It is meant to represent a high risk investment strategy.
+
+* IJS - iShares S&P Small-Cap 600 Value ETF (40%)
+* IWR - iShares Russell Mid-Cap ETF (30%)
+* VBR - Vanguard Small-Cap Value Index Fund ETF (30%)
+
+Below is a pairings plot of the selected ETFs:
+
+&nbsp;  
+
+```{r q3p6, echo=FALSE, warning=FALSE}
+mystocks = c("IJS", "IWR", "VBR")
+myprices = getSymbols(mystocks, from = "2015-08-01")
+
+for(ticker in mystocks) {
+  expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
+  eval(parse(text=expr))
+}
+
+all_returns = cbind(	ClCl(IJSa),
+                     ClCl(IWRa),
+                     ClCl(VBRa))
+
+all_returns = as.matrix(na.omit(all_returns))
+
+pairs(all_returns)
+```
+
+We are running 5000, 20 trading day models. One of the models looks follows the graph seen below:
+```{r q3p7, echo=FALSE}
+initial_wealth = 10000
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  total_wealth = initial_wealth
+  weights = c(0.4, 0.3, 0.3)
+  holdings = weights * total_wealth
+  n_days = 20
+  wealthtracker = rep(0, n_days)
+  for(today in 1:n_days) {
+    return.today = resample(all_returns, 1, orig.ids=FALSE)
+    holdings = holdings + holdings*return.today
+    total_wealth = sum(holdings)
+    wealthtracker[today] = total_wealth
+  }
+  wealthtracker
+}
+
+plot(wealthtracker, type='l', xlab='Days', ylab='Dollars')
+```
+
+A summary of these 5000 models can be seen here:
+
+```{r q3p8, echo=FALSE}
+hist(sim1[,n_days]- initial_wealth, breaks=30, main ='Profit/Loss', xlab='')
+```
+
+The mean profit/loss was:
+
+```{r q3p9, echo=FALSE}
+mean(sim1[,n_days] - initial_wealth)
+```
+
+The 5% VaR was:
+```{r q3p10,echo=FALSE}
+quantile(sim1[,n_days]- initial_wealth, prob=0.05)
+```
+
+### Portfolio 3 (Diverse):
+
+This portfolio is made up of a diverse range of ETFs. It is meant to represent a highly diversified investment strategy.
+
+* SPY - SPDR S&P500 ETF (20%)
+* IJR - iShares Core S&P Small-Cap ETF (20%)
+* VNQ - Vanguard Real Estate Index Fund ETF (10%)
+* USO - United State Oil Fund (10%)
+* DBB - Investco DB Base Metals (10%)
+* VEA - Vanguard Developed Markets Index Fund ETF (10%)
+* SHY - iShares 1-3 Year Treasury Bond ETF (10%)
+
+Below is a pairings plot of the selected ETFs:
+
+&nbsp;  
+
+```{r q3p11, echo=FALSE, warning=FALSE, messsage=FALSE, results='hide'}
+mystocks = c("SPY", "IJR", "VNQ", 'USO', 'DBB', 'VEA', 'SHY')
+myprices = getSymbols(mystocks, from = "2015-08-01")
+
+for(ticker in mystocks) {
+  expr = paste0(ticker, "a = adjustOHLC(", ticker, ")")
+  eval(parse(text=expr))
+}
+
+all_returns = cbind(	ClCl(SPYa),
+                     ClCl(IJRa),
+                     ClCl(VNQa),
+                     ClCl(USOa),
+                     ClCl(DBBa),
+                     ClCl(VEAa),
+                     ClCl(SHYa))
+
+all_returns = as.matrix(na.omit(all_returns))
+
+pairs(all_returns)
+```
+
+We are running 5000, 20 trading day models. One of the models looks follows the graph seen below:
+```{r q3p12, echo=FALSE}
+initial_wealth = 10000
+sim1 = foreach(i=1:5000, .combine='rbind') %do% {
+  total_wealth = initial_wealth
+  weights = c(0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.1)
+  holdings = weights * total_wealth
+  n_days = 20
+  wealthtracker = rep(0, n_days)
+  for(today in 1:n_days) {
+    return.today = resample(all_returns, 1, orig.ids=FALSE)
+    holdings = holdings + holdings*return.today
+    total_wealth = sum(holdings)
+    wealthtracker[today] = total_wealth
+  }
+  wealthtracker
+}
+
+plot(wealthtracker, type='l', xlab='Days', ylab='Dollars')
+```
+
+A summary of these 5000 models can be seen here:
+
+```{r q3p13, echo=FALSE}
+hist(sim1[,n_days]- initial_wealth, breaks=30, main ='Profit/Loss', xlab='')
+```
+
+The mean profit/loss was:
+
+```{r q3p14, echo=FALSE}
+mean(sim1[,n_days] - initial_wealth)
+```
+
+The 5% VaR was:
+```{r q3p15,echo=FALSE}
+quantile(sim1[,n_days]- initial_wealth, prob=0.05)
+```
+
+
+# Question 4: Market Segmentation
+
+
+
+
+
+
+
+
+# Question 5: Author attribution
+
+In this question, we need to build the best performing model to predict the author of an article on the basis of that article's textual content. We used Random Forests and Naive Base
+
+```{r, include=FALSE}
+rm(list=ls())
+
+readerPlain = function(fname){
+  readPlain(elem=list(content=readLines(fname)), 
+            id=fname, language='en') }
+```
+```{r, echo=FALSE}
+author_dirs = Sys.glob('ReutersC50/C50train/*')
+
+file_list = NULL
+train_labels = NULL
+for(author in author_dirs) {
+  author_name = substring(author, first=21)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  train_labels = append(train_labels, rep(author_name, length(files_to_add)))
+}
+
+```
+
+We begin by loading in to the data using a for loop.
+
+
+```{r, echo=FALSE}
+all_docs = lapply(file_list, readerPlain)
+mynames = file_list %>%
+  { strsplit(., '/', fixed=TRUE) } %>%
+  { lapply(., tail, n=2) } %>%
+  { lapply(., paste0, collapse = '') } %>%
+  unlist
+names(all_docs) = mynames
+names(all_docs) = sub('.txt', '', names(all_docs))
+
+train_Corpus = Corpus(VectorSource(all_docs))
+
+train_Corpus = tm_map(train_Corpus, content_transformer(tolower)) # make everything lowercase
+train_Corpus = tm_map(train_Corpus, content_transformer(removeNumbers)) # remove numbers
+train_Corpus = tm_map(train_Corpus, content_transformer(removePunctuation)) # remove punctuation
+train_Corpus = tm_map(train_Corpus, content_transformer(stripWhitespace)) ## remove excess white-space
+train_Corpus = tm_map(train_Corpus, content_transformer(removeWords), stopwords("SMART"))
+```
+Second, we took some pre-processing/tokenization steps, including:
+1) make everything lowercase
+2) remove numbers
+3) remove punctuation
+4) remove excess white-space
+```{r, echo=FALSE}
+DTM_train = DocumentTermMatrix(train_Corpus)
+
+DTM_train = removeSparseTerms(DTM_train, 0.95)
+DTM_train
+
+author_dirs = Sys.glob('ReutersC50/C50test/*')
+file_list = NULL
+test_labels = NULL
+author_names = NULL
+for(author in author_dirs) {
+  author_name = substring(author, first=20)
+  author_names = append(author_names, author_name)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  test_labels = append(test_labels, rep(author_name, length(files_to_add)))
+}
+```
+Next we created DTM(doc-term-matrix) for the train data set. We have 2500 documents with 660 terms and a sparcity of 86%
+```{r, echo=FALSE}
+all_docs = lapply(file_list, readerPlain) 
+names(all_docs) = file_list
+names(all_docs) = sub('.txt', '', names(all_docs))
+
+
+test_corpus = Corpus(VectorSource(all_docs))
+test_corpus = tm_map(test_corpus, content_transformer(tolower))
+test_corpus = tm_map(test_corpus, content_transformer(removeNumbers))
+test_corpus = tm_map(test_corpus, content_transformer(removePunctuation))
+test_corpus = tm_map(test_corpus, content_transformer(stripWhitespace))
+test_corpus = tm_map(test_corpus, content_transformer(removeWords), stopwords("en"))
+DTM_test = DocumentTermMatrix(test_corpus,
+                              control = list(dictionary=Terms(DTM_train)))
+DTM_test
+```
+
+```{r, echo=FALSE}
+DTM_test = as.matrix(DTM_test)
+DTM_test = as.data.frame(DTM_test)
+DTM_train = as.matrix(DTM_train)
+DTM_train = as.data.frame(DTM_train)
+
+DTM_train<-cbind(DTM_train,train_labels)
+DTM_test<-cbind(DTM_test,test_labels)
+```
+
+```{r, echo=FALSE}
+nB = naiveBayes(as.factor(train_labels)~., data=DTM_train)
+nB_predictions = predict(nB, DTM_test[-661], type="class")
+
+nB_table <-data.frame(table(DTM_test$test_labels, nB_predictions))
+sum(DTM_test$test_labels == nB_predictions) / 2500
+
+set.seed(1)
+tfidf_classifier <- randomForest(x = DTM_train[-661], 
+                                 y = as.factor(DTM_train$train_labels),
+                                 nTree = 25)
+tfidf_predicted_values = predict(tfidf_classifier, DTM_test[-661])
+print(sum(diag(table(tfidf_predicted_values, DTM_test$test_labels)))/sum(table(tfidf_predicted_values, DTM_test$test_labels)))
+```
+Finally, we pull the naive bayes analysis and get a 26% accuracy. This is not ideal compared to random forest. Random forest gets us an accuracy of 59% with 25 trees. This was our best model. Increasing or decreasing the number of trees only decreased accuracy. Based on this we think random forests is the best method for predicting the author of an article based on the articles textual content.
+
+
+
+
+# Question 6: Association Rule Mining
+
+```{r, include=FALSE}
+df5 <- read.transactions("groceries.txt", sep = ",")
+```
+To start, we can take a small look into the dataset.
+```{r, echo=FALSE}
+summary(df5)
+```
+Here we can see the most frequent items bought, as well as the size of all the baskets in the dataset. Whole milk clearly dominates while Other Vegetables comes in a close 2nd.
+
+```{r, echo=FALSE}
+itemFrequencyPlot(df5, topN=10)
+```
+Here we can see the frequency of the top 10 items found in carts. Whole milk comes up nearly 25% of the time in baskets with Other Vegetables coming in around 19%.
+
+Moving forward to try and find association, we have a 125 rule set created by limiting support to 0.01 and confidence to 0.30.
+```{r, include=FALSE}
+m1 <- apriori(df5, parameter=list(support=0.01, confidence=0.30, minlen=2))
+```
+
+```{r, echo=FALSE}
+m1
+summary(m1)
+```
+Now we can see we have 69 times their is a correlation of one item to another, and 56 times we have 2 items that correlate to getting a 3rd item.
+
+```{r, echo=FALSE}
+inspect(sort(m1, by="lift")[1:10])
+```
+So with this, I separated the ruleset by making the top rules those with higher lift. Lift being the likelyhood of someone buying the item because of the items they already have compared to the base rate. Those who buy citrus fruit and other vegetables are 3 times more liikely to buy root vegetables. What is interesting here is the 3rd rule. All of the rules of the top 10 by lift are rules that require at least 2 items before considering the 3rd, however the 3rd highest rule is only a one for one correlation. These shoppers are 3 times more likely to buy root vegetable when the person also buys beef. This makes sense if you think about how meat is commonly prepared, but the fact it beats out other teams of 2 is interesting. Another interesting element to this data is the infrequency of whole milk here. Whole milk was found to be the most common item by far, however in this comparison it only shows up in 3 combos. I had assumed milk would be all over the place, but in reality when it comes to association, people just seem to buy milk no matter what. Whereas the second highest item in terms of raw frequency is actually much more common to find in associations.
+
