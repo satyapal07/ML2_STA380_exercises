@@ -2,12 +2,11 @@
 title: "Intro to Machine Learning (STA380) - Part 2"
 author: "Christian Alfonso, Musmin Zar, Satya Pal, Vinay Pahwa"
 date: "16/08/2021"
-Link to Github repository: https://github.com/satyapal07/ML2_STA380_exercises
-
 output: pdf_document
-
-
 ---
+
+Link to Github repository: "https://github.com/satyapal07/ML2_STA380_exercises"
+
 
 ```{r}
 
@@ -24,6 +23,11 @@ library(foreach)
 library(randomForest)
 library(plyr)
 library(arules) ## install.packages('arules')
+library(LICORS) 
+library(foreach)
+library(plotly)
+library(ggplot2)
+library(tidyverse)
 
 ```
 
@@ -37,7 +41,9 @@ df <- read.csv("greenbuildings.csv")
 
 I do not agree with the stats guru. For starters, only 216 houses have an occupancy of less than 10%. This is a small amount of buildings, and there is no way to know what is happening in this buildins, so we shouldn't just write them off.
 
-To begin, we have the plot of the data the Guru uses.
+To begin, we have the plot of the data the Guru uses.  
+&nbsp;  
+
 ```{r, echo=FALSE}
 #General Relationship between Green Rating and Rent used by Excel Guru (boxplots)
 ggplot(data = df, aes(x=green_rating, y = Rent)) +
@@ -45,6 +51,7 @@ ggplot(data = df, aes(x=green_rating, y = Rent)) +
   labs(x="Green Rating", y='Rent ($ per square foot)', title = 'Green Rating versus Rent') +
   theme_classic()
 ```
+
 He is saying the rent is higher because the buildings are green. He seems right if you use only this data, but lets look at some more.
 
 ```{r, echo=FALSE}
@@ -411,6 +418,79 @@ quantile(sim1[,n_days]- initial_wealth, prob=0.05)
 # Question 4: Market Segmentation
 
 
+One of the best ways to divide a market into different segments is through K-Means Clustering.
+This method allows us to split the data into like minded groups based on the information we are given.
+
+The first step is to look at the correlation matrix of the different variables in order to get a better understanding of possible patterns. We have included a sample of the correlation matrix below:
+
+```{r q4p2, echo=FALSE}
+df = read.csv('social_marketing.csv')
+
+df<-df[,-c(1,5,35,36)]
+
+head(cor(df))
+```
+
+From there we can being to create the model. From the graph below we can see that a good value for K would be around 6. This allows the model to accuratley seperate the data without being too complex.
+
+```{r q4p3, echo=FALSE}
+k.max <- 15
+data <- df
+sumofsquares <- sapply(1:k.max, 
+                       function(k){kmeans(data, k, nstart=30,iter.max = 15 )$tot.withinss})
+plot(1:k.max, sumofsquares,
+     type="b", pch = 20, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+```
+
+```{r q4p5, echo=FALSE}
+set.seed(1)
+clust = kmeanspp(df, k=6, nstart=25)
+```
+
+From the graphs below we can visualize our first cluster. This cluster contains variables such as Outdoors, Perosnal Fitness, and Health and Nutrition. This cluster is likely made up of health conscious individuals who enjoy the outdoors.
+
+```{r Q4p6, echo=FALSE, out.width='50%', fig.align='center'}
+qplot(outdoors, personal_fitness, data=df, color=factor(clust$cluster))
+qplot(food, personal_fitness, data = df, color=factor(clust$cluster))
+qplot(health_nutrition, outdoors, data = df, color=factor(clust$cluster))
+```
+
+Another distinct group can be seen here and includes News, Politics, and Current Events. This cluster contains users who keep up with what is going on around the world and activley participate in discussion on these topics.
+
+````{r q4p7, echo=FALSE, out.width='50%', fig.align='center'}
+qplot(news, politics, data=df, color=factor(clust$cluster))
+qplot(politics, current_events, data=df, color=factor(clust$cluster))
+qplot(news, current_events,  data=df, color=factor(clust$cluster))
+``` 
+
+Middle aged users make up another group. This users engage in topics such as Relgion, Parenting, and Family.
+
+```{r q4p8, echo=FALSE, out.width='50%', fig.align='center'}
+qplot(religion, parenting, data=df, color=factor(clust$cluster))
+qplot(family, parenting, data=df, color=factor(clust$cluster))
+qplot(family, religion, data=df, color=factor(clust$cluster))
+```
+
+The final distict visual group is college aged users. These users engage in discussing colleges, sports, and online gaming.
+
+```{r q4p9, echo=FALSE, out.width='50%', fig.align='center'}
+qplot(college_uni, online_gaming, data=df, color=factor(clust$cluster))
+qplot(sports_playing, online_gaming, data=df, color=factor(clust$cluster))
+qplot(college_uni, sports_playing, data=df, color=factor(clust$cluster))
+```
+
+When we compare the groups made above with the groups found through Hierarchical Clustering, we see some different results. There are many variables which are closely related and become one large group in the Hierarchical model which the K Means model was much more distinct.
+
+```{r q4p10, echo=FALSE}
+s3<-t(df)
+s3scaled <- scale(s3, center=TRUE, scale=TRUE)
+social_mktg_matrix = dist(s3scaled, method='euclidean' )
+hier_social_mktg = hclust(social_mktg_matrix, method='average')
+cluster1 = cutree(hier_social_mktg, k=6)
+cluster1
+```
 
 
 
